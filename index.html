@@ -4,29 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>حركة همم - نظام الأرشفة الموحد وإدارة الطلبات</title>
-    <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyA2PJTCkIl1DehcLLK_Wpy4X-QTVG4ycH0",
-    authDomain: "hmm-ecc74.firebaseapp.com",
-    projectId: "hmm-ecc74",
-    storageBucket: "hmm-ecc74.firebasestorage.app",
-    messagingSenderId: "1092745287735",
-    appId: "1:1092745287735:web:6e4dbce88f2d7117b507b2",
-    measurementId: "G-8V30XE656Y"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
+    
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -62,6 +40,10 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Firebase SDK Compat -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
     <style>
         /* Base Styles & Premium Typography */
         body { 
@@ -390,17 +372,25 @@
     <div id="print-area" class="hidden"></div>
 
     <script>
+        // إعدادات فايربيس
+        const firebaseConfig = {
+            apiKey: "AIzaSyA2PJTCkIl1DehcLLK_Wpy4X-QTVG4ycH0",
+            authDomain: "hmm-ecc74.firebaseapp.com",
+            projectId: "hmm-ecc74",
+            storageBucket: "hmm-ecc74.firebasestorage.app",
+            messagingSenderId: "1092745287735",
+            appId: "1:1092745287735:web:6e4dbce88f2d7117b507b2",
+            measurementId: "G-8V30XE656Y"
+        };
+
+        // تهيئة Firebase
+        firebase.initializeApp(firebaseConfig);
+        const firestore = firebase.firestore();
+
         let db = {
             currentUser: null,
-            users: [
-                { username: "iraq_kut", fullName: "مسؤول النظام الرئيسي", passwordHash: "2030hhhh", role: "Admin" }
-            ],
-            requestTypes: [
-                "طلب تعيين",
-                "طلب نقل",
-                "طلب إجازة",
-                "تظلم شكوى"
-            ],
+            users: [],
+            requestTypes: [],
             requests: [],
             requestCounter: 1
         };
@@ -408,6 +398,45 @@
         let currentTab = 'requests';
         let deleteTargetId = null;
         let newlyAddedId = null;
+
+        // مزامنة البيانات من Firebase Firestore لحظياً (Real-time Sync)
+        function initFirebaseSync() {
+            // مزامنة المستخدمين
+            firestore.collection("users").onSnapshot((snapshot) => {
+                db.users = snapshot.docs.map(doc => doc.data());
+                // إضافة حساب الإدمن الافتراضي إذا كانت المجموعة فارغة
+                if (db.users.length === 0) {
+                    const defaultAdmin = { username: "iraq_kut", fullName: "مسؤول النظام الرئيسي", passwordHash: "2030hhhh", role: "Admin" };
+                    firestore.collection("users").doc(defaultAdmin.username).set(defaultAdmin);
+                }
+                if (currentTab === 'users') switchTab('users');
+            });
+
+            // مزامنة أنواع الطلبات
+            firestore.collection("requestTypes").onSnapshot((snapshot) => {
+                db.requestTypes = snapshot.docs.map(doc => doc.data().name);
+                if (db.requestTypes.length === 0) {
+                    const defaultTypes = ["طلب تعيين", "طلب نقل", "طلب إجازة", "تظلم شكوى"];
+                    defaultTypes.forEach(t => firestore.collection("requestTypes").doc(t).set({ name: t }));
+                }
+                populateRequestTypeDropdowns();
+                if (currentTab === 'types') switchTab('types');
+            });
+
+            // مزامنة الطلبات
+            firestore.collection("requests").onSnapshot((snapshot) => {
+                db.requests = snapshot.docs.map(doc => doc.data());
+                // ترتيب الطلبات تنازلياً حسب تاريخ الإضافة
+                db.requests.sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date));
+                if (currentTab === 'requests') {
+                    updateStatsUI();
+                    filterRequests();
+                }
+            });
+        }
+
+        // تشغيل المزامنة فور تحميل الصفحة
+        initFirebaseSync();
 
         function handleLoginSubmit(e) {
             e.preventDefault();
@@ -422,9 +451,19 @@
             btnText.innerText = "جاري التحقق...";
             btnIcon.className = "fa-solid fa-circle-notch fa-spin text-xs";
 
-            setTimeout(() => {
-                const user = db.users.find(u => u.username === username && u.passwordHash === password);
-                
+            // التحقق من الحساب عبر البيانات القادمة من Firebase
+            firestore.collection("users").where("username", "==", username).get().then((querySnapshot) => {
+                let user = null;
+                querySnapshot.forEach((doc) => {
+                    const d = doc.data();
+                    if (d.passwordHash === password) user = d;
+                });
+
+                // التحقق الاحتياطي من الأدمن الافتراضي
+                if (!user && username === "iraq_kut" && password === "2030hhhh") {
+                    user = { username: "iraq_kut", fullName: "مسؤول النظام الرئيسي", passwordHash: "2030hhhh", role: "Admin" };
+                }
+
                 if (!user) {
                     errEl.classList.remove('hidden');
                     submitBtn.disabled = false;
@@ -447,8 +486,12 @@
                     btnText.innerText = "تسجيل الدخول";
                     btnIcon.className = "fa-solid fa-arrow-left text-xs";
                 }, 300);
-
-            }, 300);
+            }).catch(() => {
+                errEl.classList.remove('hidden');
+                submitBtn.disabled = false;
+                btnText.innerText = "تسجيل الدخول";
+                btnIcon.className = "fa-solid fa-arrow-left text-xs";
+            });
         }
 
         function bootApp() {
@@ -732,18 +775,21 @@
             const notes = document.getElementById('req-notes').value.trim();
 
             if (id) {
-                const req = db.requests.find(r => r.id === id);
-                if (req) {
-                    req.citizen = citizen;
-                    req.phone = phone;
-                    req.reqDate = reqDate;
-                    req.type = type;
-                    req.priority = priority;
-                    req.status = status;
-                    req.notes = notes;
-                }
+                // تعديل طلب موجود في Firebase
+                firestore.collection("requests").doc(id).update({
+                    citizen,
+                    phone,
+                    reqDate,
+                    type,
+                    priority,
+                    status,
+                    notes
+                }).then(() => {
+                    closeRequestModal();
+                });
             } else {
-                let nextNum = db.requestCounter || 1;
+                // إنشاء طلب جديد في Firebase
+                let nextNum = 1;
                 db.requests.forEach(r => {
                     if (r.id && r.id.startsWith('AZ-')) {
                         const num = parseInt(r.id.replace('AZ-', ''), 10);
@@ -752,7 +798,6 @@
                         }
                     }
                 });
-                db.requestCounter = nextNum + 1;
                 const autoId = 'AZ-' + nextNum;
                 const now = new Date();
                 const dateStr = now.toISOString().split('T')[0];
@@ -765,19 +810,14 @@
                     priority,
                     status,
                     notes,
-                    date: dateStr
+                    date: dateStr,
+                    createdAt: now.toISOString()
                 };
-                db.requests.unshift(newReq);
-                newlyAddedId = autoId;
-            }
 
-            closeRequestModal();
-
-            if (currentTab === 'requests') {
-                updateStatsUI();
-                filterRequests();
-            } else {
-                switchTab('requests');
+                firestore.collection("requests").doc(autoId).set(newReq).then(() => {
+                    newlyAddedId = autoId;
+                    closeRequestModal();
+                });
             }
         }
 
@@ -829,12 +869,7 @@
 
         function updateRequestStatus(id, newStatus) {
             if (db.currentUser?.role !== 'Admin') return;
-            const req = db.requests.find(r => r.id === id);
-            if (req) {
-                req.status = newStatus;
-                updateStatsUI();
-                filterRequests();
-            }
+            firestore.collection("requests").doc(id).update({ status: newStatus });
         }
 
         function confirmDeleteRequest(id) {
@@ -852,10 +887,9 @@
         }
 
         function deleteRequest(id) {
-            db.requests = db.requests.filter(r => r.id !== id);
-            closeDeleteModal();
-            updateStatsUI();
-            filterRequests();
+            firestore.collection("requests").doc(id).delete().then(() => {
+                closeDeleteModal();
+            });
         }
 
         function printRequest(id) {
@@ -1006,14 +1040,15 @@
                 return;
             }
 
-            db.users.push({ fullName, username, passwordHash: password, role });
-            closeUserModal();
-            switchTab('users');
+            firestore.collection("users").doc(username).set({
+                fullName, username, passwordHash: password, role
+            }).then(() => {
+                closeUserModal();
+            });
         }
 
         function deleteUser(username) {
-            db.users = db.users.filter(u => u.username !== username);
-            switchTab('users');
+            firestore.collection("users").doc(username).delete();
         }
 
         function renderTypesView() {
@@ -1066,16 +1101,15 @@
         function saveType(e) {
             e.preventDefault();
             const name = document.getElementById('type-name').value.trim();
-            if (name && !db.requestTypes.includes(name)) {
-                db.requestTypes.push(name);
+            if (name) {
+                firestore.collection("requestTypes").doc(name).set({ name }).then(() => {
+                    closeTypeModal();
+                });
             }
-            closeTypeModal();
-            switchTab('types');
         }
 
         function deleteType(typeName) {
-            db.requestTypes = db.requestTypes.filter(t => t !== typeName);
-            switchTab('types');
+            firestore.collection("requestTypes").doc(typeName).delete();
         }
     </script>
 </body>
