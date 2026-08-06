@@ -551,19 +551,19 @@
             const totalEl = document.getElementById('stat-total-count');
             const pendingEl = document.getElementById('stat-pending-count');
             const completedEl = document.getElementById('stat-completed-count');
-            const urgentEl = document.getElementById('stat-urgent-count');
+            const rejectedEl = document.getElementById('stat-rejected-count');
 
             if (!totalEl) return;
 
             const total = db.requests.length;
             const pending = db.requests.filter(r => r.status === 'قيد المراجعة' || r.status === 'جديد').length;
             const completed = db.requests.filter(r => r.status === 'مكتمل').length;
-            const urgent = db.requests.filter(r => r.priority === 'فوري').length;
+            const rejected = db.requests.filter(r => r.status === 'مرفوض').length;
 
-            totalEl.innerText = total;
-            pendingEl.innerText = pending;
-            completedEl.innerText = completed;
-            urgentEl.innerText = urgent;
+            if (totalEl) totalEl.innerText = total;
+            if (pendingEl) pendingEl.innerText = pending;
+            if (completedEl) completedEl.innerText = completed;
+            if (rejectedEl) rejectedEl.innerText = rejected;
         }
 
         function populateRequestTypeDropdowns() {
@@ -576,7 +576,7 @@
             const total = db.requests.length;
             const pending = db.requests.filter(r => r.status === 'قيد المراجعة' || r.status === 'جديد').length;
             const completed = db.requests.filter(r => r.status === 'مكتمل').length;
-            const urgent = db.requests.filter(r => r.priority === 'فوري').length;
+            const rejected = db.requests.filter(r => r.status === 'مرفوض').length;
 
             return `
                 <div class="space-y-6 animate-slide-right">
@@ -605,10 +605,10 @@
                         </div>
                         <div class="bg-white p-6 rounded-2xl shadow-xs border border-slate-200/80 flex items-center justify-between">
                             <div>
-                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">عاجلة</p>
-                                <h3 id="stat-urgent-count" class="text-3xl font-extrabold text-slate-900 tracking-tight">${urgent}</h3>
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">المرفوض</p>
+                                <h3 id="stat-rejected-count" class="text-3xl font-extrabold text-slate-900 tracking-tight">${rejected}</h3>
                             </div>
-                            <div class="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 text-lg border border-rose-200/60"><i class="fa-solid fa-bolt"></i></div>
+                            <div class="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 text-lg border border-rose-200/60"><i class="fa-solid fa-circle-xmark"></i></div>
                         </div>
                     </div>
 
