@@ -1,0 +1,12 @@
+{
+  "name": "حركة همم - نظام الأرشفة الموحد",
+  "short_name": "همم",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0b426f",
+  "description": "نظام الأرشفة الموحد وإدارة الطلبات الرسمية",
+  "icons": []
+}
